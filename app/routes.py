@@ -220,26 +220,69 @@ def get_book(book_id):
 @manager_or_admin_required
 def delete_book(book_id):
     try:
+        print(f"Intentando eliminar libro con ID: {book_id}")
         libro = Book.query.get_or_404(book_id)
-        
-        prestamo_activo = Prestamo.query.filter_by(
+        print(f"Libro encontrado: {libro.titulo}")
+        prestamos_activos = Prestamo.query.filter_by(
             libro_id=libro.id,
             estado='activo'
-        ).first()
+        ).all()
         
-        if prestamo_activo:
+        print(f"Número de préstamos activos encontrados: {len(prestamos_activos)}")
+        
+        if prestamos_activos:
+            prestamo_activo = prestamos_activos[0] 
+            print(f"Libro tiene préstamo activo para cliente: {prestamo_activo.cliente.nombre}")
             return jsonify({
                 'message': 'No se puede eliminar el libro porque está prestado',
-                'cliente': prestamo_activo.cliente.nombre
+                'cliente': prestamo_activo.cliente.nombre,
+                'prestamos_activos': len(prestamos_activos)
             }), 400
-            
+        
+        print("No hay préstamos activos, procediendo a eliminar...")
+        
+        prestamos_historicos = Prestamo.query.filter_by(
+            libro_id=libro.id,
+            estado='devuelto'
+        ).all()
+        
+        print(f"Préstamos históricos encontrados: {len(prestamos_historicos)}")
+        
+        if prestamos_historicos:
+            print("Eliminando préstamos históricos...")
+            for prestamo in prestamos_historicos:
+                db.session.delete(prestamo)
+        
+        verificacion_final = Prestamo.query.filter_by(
+            libro_id=libro.id,
+            estado='activo'
+        ).count()
+        
+        if verificacion_final > 0:
+            print(f"ADVERTENCIA: Se encontraron {verificacion_final} préstamos activos en verificación final")
+            return jsonify({
+                'message': 'Error de consistencia: Se detectaron préstamos activos en verificación final',
+                'prestamos_activos': verificacion_final
+            }), 400
+        
+        print("Eliminando libro...")
         db.session.delete(libro)
         db.session.commit()
+        print("Libro eliminado exitosamente")
+        
         return "", 204
         
     except Exception as e:
+        print(f"Error completo: {str(e)}")
+        print(f"Tipo de error: {type(e)}")
+        import traceback
+        print(f"Traceback: {traceback.format_exc()}")
         db.session.rollback()
-        return jsonify({'message': 'Error al eliminar libro', 'error': str(e)}), 500
+        return jsonify({
+            'message': 'Error al eliminar libro', 
+            'error': str(e),
+            'type': str(type(e))
+        }), 500
 
 @books_bp.route("/<int:book_id>", methods=["PUT"])
 @manager_or_admin_required
